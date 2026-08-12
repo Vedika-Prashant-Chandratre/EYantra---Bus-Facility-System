@@ -1,0 +1,6 @@
+{
+  "name": "EYantra",
+  "description": "Smart College Bus Tracking, Pass & Management System",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
