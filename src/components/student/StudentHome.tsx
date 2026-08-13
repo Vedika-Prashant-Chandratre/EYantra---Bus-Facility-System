@@ -1,5 +1,6 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
+import { StudentSelector } from '../common/StudentSelector';
 import { Navigation, MapPin, Phone, User, Clock, AlertTriangle, ArrowRight, ShieldCheck, Bus as BusIcon, Sparkles } from 'lucide-react';
 
 interface StudentHomeProps {
@@ -7,11 +8,19 @@ interface StudentHomeProps {
 }
 
 export const StudentHome: React.FC<StudentHomeProps> = ({ setActiveTab }) => {
-  const { currentStudent, buses, routes, incidents } = useApp();
+  const { currentStudent, buses, routes, drivers, incidents, getTripStateForBus } = useApp();
 
   const assignedBus = buses.find((b) => b.id === currentStudent.assignedBusId) || buses[0];
   const assignedRoute = routes.find((r) => r.id === currentStudent.assignedRouteId) || routes[0];
+  const assignedDriver = drivers.find((d) => d.assignedBusId === assignedBus.id) || drivers.find((d) => d.name === assignedBus.driverName) || drivers[0];
+  const studentTripState = getTripStateForBus(assignedBus.id);
   const activeIncident = incidents.find((i) => i.busId === assignedBus.id && i.status !== 'Resolved');
+  const currentStopName = studentTripState.currentLocationLabel || studentTripState.currentStopName || assignedRoute.stops[assignedBus.currentStopIndex]?.name || assignedRoute.startPoint;
+  const nextStopName = studentTripState.nextStopName || assignedRoute.stops[Math.min(assignedBus.currentStopIndex + 1, assignedRoute.stops.length - 1)]?.name || assignedRoute.endPoint;
+  const etaMinutes = studentTripState.etaNextStopMin ?? 0;
+  const distanceToNext = studentTripState.distanceToNextStopKm ?? 0;
+  const availableSeats = Math.max(0, assignedBus.capacity - assignedBus.currentOccupancy);
+  const occupancyPercent = Math.round((assignedBus.currentOccupancy / (assignedBus.capacity || 1)) * 100);
 
   return (
     <div className="space-y-6 pb-8">
@@ -37,16 +46,18 @@ export const StudentHome: React.FC<StudentHomeProps> = ({ setActiveTab }) => {
             </div>
           </div>
 
-          {/* Quick Pass Status Pill */}
-          <div className="bg-slate-800/90 p-4 rounded-xl border border-slate-700 shrink-0 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Digital Bus Pass</div>
-              <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 mt-0.5">
-                <span>Active & Verified</span>
-                <span className="text-slate-400 text-[10px]">({currentStudent.passExpiryDate})</span>
+          <div className="flex flex-col gap-3 shrink-0">
+            <StudentSelector className="border-slate-700 bg-slate-900/90 [&_span]:text-slate-400 [&_select]:border-slate-700 [&_select]:bg-slate-950 [&_select]:text-white" />
+            <div className="bg-slate-800/90 p-4 rounded-xl border border-slate-700 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Digital Bus Pass</div>
+                <div className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 mt-0.5">
+                  <span>Active & Verified</span>
+                  <span className="text-slate-400 text-[10px]">({currentStudent.passExpiryDate})</span>
+                </div>
               </div>
             </div>
           </div>
@@ -99,7 +110,7 @@ export const StudentHome: React.FC<StudentHomeProps> = ({ setActiveTab }) => {
                 : 'bg-amber-100 text-amber-800 border border-amber-200'
             }`}
           >
-            ● {assignedBus.status}
+            ● {studentTripState.tripStatus === 'NOT_STARTED' ? 'Awaiting Departure' : assignedBus.status}
           </span>
         </div>
 
@@ -109,24 +120,26 @@ export const StudentHome: React.FC<StudentHomeProps> = ({ setActiveTab }) => {
             <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-blue-600" /> Estimated Arrival
             </div>
-            <div className="text-lg font-bold text-blue-600 mt-1">12 min</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">Live ETA</div>
+            <div className="text-lg font-bold text-blue-600 mt-1">
+              {studentTripState.tripStatus === 'NOT_STARTED' ? 'Waiting' : `~${etaMinutes} min`}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5">{studentTripState.tripStatus === 'NOT_STARTED' ? 'Driver has not started the trip yet' : `Distance to next stop: ${distanceToNext.toFixed(1)} km`}</div>
           </div>
 
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-amber-600" /> Next Stop
             </div>
-            <div className="text-lg font-bold text-slate-900 mt-1 truncate">Shivajinagar</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">Arriving in 4 min</div>
+            <div className="text-lg font-bold text-slate-900 mt-1 truncate">{nextStopName}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">{studentTripState.tripStatus === 'NOT_STARTED' ? 'Trip will update after START TRIP' : `Current: ${currentStopName}`}</div>
           </div>
 
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
               <User className="w-3.5 h-3.5 text-indigo-600" /> Assigned Driver
             </div>
-            <div className="text-lg font-bold text-slate-900 mt-1 truncate">{assignedBus.driverName}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">Lic: MH12201800923</div>
+            <div className="text-lg font-bold text-slate-900 mt-1 truncate">{assignedDriver.name}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">Lic: {assignedDriver.licenseNumber}</div>
           </div>
 
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
@@ -136,7 +149,7 @@ export const StudentHome: React.FC<StudentHomeProps> = ({ setActiveTab }) => {
             <div className="text-lg font-bold text-emerald-700 mt-1">
               {assignedBus.currentOccupancy} / {assignedBus.capacity}
             </div>
-            <div className="text-[11px] text-slate-500 mt-0.5">12 Seats Available</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">{availableSeats} Seats Available</div>
           </div>
         </div>
 
@@ -172,20 +185,20 @@ export const StudentHome: React.FC<StudentHomeProps> = ({ setActiveTab }) => {
 
           <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
             <img
-              src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=250"
-              alt="Driver"
+              src={assignedDriver.photoUrl}
+              alt={assignedDriver.name}
               className="w-14 h-14 rounded-xl object-cover ring-2 ring-blue-500/30"
             />
             <div className="flex-1">
-              <h4 className="text-base font-bold text-slate-900">{assignedBus.driverName}</h4>
-              <p className="text-xs text-slate-500 mt-0.5">Assigned to Route A (Bus A-101)</p>
+              <h4 className="text-base font-bold text-slate-900">{assignedDriver.name}</h4>
+              <p className="text-xs text-slate-500 mt-0.5">Assigned to {assignedRoute.code} (Bus {assignedBus.busNumber})</p>
               <div className="mt-2 flex items-center gap-2">
                 <a
-                  href={`tel:${assignedBus.driverPhone}`}
+                  href={`tel:${assignedDriver.phone}`}
                   className="inline-flex items-center gap-1.5 text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1 rounded-lg border border-blue-200 transition"
                 >
                   <Phone className="w-3.5 h-3.5" />
-                  <span>{assignedBus.driverPhone}</span>
+                  <span>{assignedDriver.phone}</span>
                 </a>
               </div>
             </div>
@@ -195,13 +208,13 @@ export const StudentHome: React.FC<StudentHomeProps> = ({ setActiveTab }) => {
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
             <div className="flex items-center justify-between text-xs font-bold">
               <span className="text-slate-700">Current Occupancy</span>
-              <span className="text-blue-600">28 / 40 Seats Occupied</span>
+              <span className="text-blue-600">{assignedBus.currentOccupancy} / {assignedBus.capacity} Seats Occupied</span>
             </div>
             <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
-              <div className="bg-blue-600 h-full rounded-full w-[70%]" />
+              <div className="bg-blue-600 h-full rounded-full transition-all duration-300" style={{ width: `${occupancyPercent}%` }} />
             </div>
             <p className="text-[11px] text-slate-500 pt-1">
-              Estimated 12 seats available for boarding at Shivajinagar stop.
+              Estimated {availableSeats} seats available for boarding at {currentStopName} stop.
             </p>
           </div>
         </div>

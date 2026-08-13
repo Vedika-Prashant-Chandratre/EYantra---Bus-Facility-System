@@ -1,1 +1,29 @@
 @import "tailwindcss";
+
+/* Scope Leaflet z-index so map panes stay below the sticky navbar (z-60) */
+.leaflet-map-scope {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
+}
+
+.leaflet-map-scope .leaflet-container {
+  z-index: 0 !important;
+}
+
+.leaflet-map-scope .leaflet-pane,
+.leaflet-map-scope .leaflet-map-pane,
+.leaflet-map-scope .leaflet-tile-pane,
+.leaflet-map-scope .leaflet-overlay-pane,
+.leaflet-map-scope .leaflet-shadow-pane,
+.leaflet-map-scope .leaflet-marker-pane,
+.leaflet-map-scope .leaflet-tooltip-pane,
+.leaflet-map-scope .leaflet-popup-pane {
+  z-index: 1 !important;
+}
+
+.leaflet-map-scope .leaflet-top,
+.leaflet-map-scope .leaflet-bottom,
+.leaflet-map-scope .leaflet-control {
+  z-index: 2 !important;
+}

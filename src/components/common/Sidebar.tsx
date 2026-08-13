@@ -25,12 +25,20 @@ interface SidebarProps {
   setActiveTab: (tab: string) => void;
 }
 
+interface NavItem {
+  id: string;
+  label: string;
+  icon: React.ComponentType<any>;
+  badge?: string;
+  danger?: boolean;
+}
+
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
   const { role, incidents } = useApp();
 
   const activeIncidentsCount = incidents.filter((i) => i.status !== 'Resolved').length;
 
-  const studentNavItems = [
+  const studentNavItems: NavItem[] = [
     { id: 'home', label: 'Home Dashboard', icon: Home },
     { id: 'live-tracking', label: 'Live Bus Tracking', icon: Navigation, badge: 'LIVE' },
     { id: 'route-details', label: 'Route & Stops', icon: MapPin },
@@ -40,13 +48,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
     { id: 'profile', label: 'My Profile', icon: User },
   ];
 
-  const driverNavItems = [
+  const driverNavItems: NavItem[] = [
     { id: 'driver-dashboard', label: 'Driver Console', icon: Truck },
     { id: 'live-tracking', label: 'Route Map', icon: Navigation, badge: 'GPS' },
     { id: 'driver-emergency', label: 'Emergency / SOS', icon: AlertTriangle, danger: true },
   ];
 
-  const adminNavItems = [
+  const adminNavItems: NavItem[] = [
     { id: 'admin-dashboard', label: 'Control Overview', icon: LayoutDashboard },
     { id: 'admin-fleet-map', label: 'Live Fleet Map', icon: Map },
     { id: 'admin-incidents', label: 'Incident Center', icon: AlertTriangle, badge: activeIncidentsCount > 0 ? `${activeIncidentsCount}` : undefined, danger: activeIncidentsCount > 0 },

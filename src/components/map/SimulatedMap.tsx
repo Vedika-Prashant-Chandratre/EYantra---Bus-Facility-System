@@ -1,385 +1,286 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { MapContainer, Marker, Popup, Polyline, TileLayer, ZoomControl, useMap } from 'react-leaflet';
+import { divIcon, LatLngBoundsExpression, LatLngTuple, Marker as LeafletMarker } from 'leaflet';
 import { useApp } from '../../context/AppContext';
-import { Play, Pause, RotateCcw, Bus as BusIcon, MapPin, Navigation, Compass, AlertTriangle, ShieldCheck, User, Phone, Zap } from 'lucide-react';
-import { Bus } from '../../types';
+import { Bus, TripState } from '../../types';
 
 interface SimulatedMapProps {
   showAllFleet?: boolean;
   onSelectBus?: (bus: Bus) => void;
   selectedBusId?: string;
+  busId?: string;
+  tripState?: TripState;
 }
+
+const getCoordinate = (stop: { latitude?: number; longitude?: number; x: number; y: number }): LatLngTuple => {
+  if (typeof stop.latitude === 'number' && typeof stop.longitude === 'number') {
+    return [stop.latitude, stop.longitude];
+  }
+
+  return [18.5 + stop.y * 0.01, 73.6 + stop.x * 0.01];
+};
+
+const stopIcon = (status: 'completed' | 'current' | 'next' | 'upcoming') => {
+  const palette = {
+    completed: { bg: '#16a34a', ring: '#dcfce7' },
+    current: { bg: '#2563eb', ring: '#dbeafe' },
+    next: { bg: '#f59e0b', ring: '#fef3c7' },
+    upcoming: { bg: '#64748b', ring: '#e2e8f0' },
+  }[status];
+
+  return divIcon({
+    className: '',
+    html: `
+      <div style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:9999px;background:${palette.bg};border:2px solid white;box-shadow:0 0 0 5px ${palette.ring};color:white;font-size:11px;font-weight:800;">
+        ${status === 'completed' ? '✓' : '•'}
+      </div>
+    `,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+};
+
+const busIcon = (status: Bus['status'], isPrimary = true) => {
+  const color =
+    status === 'On Route'
+      ? '#2563eb'
+      : status === 'Delayed'
+      ? '#f59e0b'
+      : status === 'Breakdown' || status === 'Emergency'
+      ? '#dc2626'
+      : '#475569';
+
+  return divIcon({
+    className: '',
+    html: `
+      <div style="display:flex;align-items:center;justify-content:center;min-width:${isPrimary ? 38 : 30}px;height:${isPrimary ? 38 : 30}px;padding:0 8px;border-radius:9999px;background:${color};color:white;border:3px solid white;box-shadow:0 12px 24px rgba(15,23,42,0.22);font-size:${isPrimary ? 18 : 14}px;line-height:1;">
+        🚌
+      </div>
+    `,
+    iconSize: [isPrimary ? 38 : 30, isPrimary ? 38 : 30],
+    iconAnchor: [isPrimary ? 19 : 15, isPrimary ? 19 : 15],
+  });
+};
+
+const MapViewportSync: React.FC<{
+  routeBounds: LatLngBoundsExpression;
+  busLocation: LatLngTuple;
+  followBus: boolean;
+}> = ({ routeBounds, busLocation, followBus }) => {
+  const map = useMap();
+  const hasFitBoundsRef = useRef(false);
+
+  useEffect(() => {
+    if (!hasFitBoundsRef.current) {
+      map.fitBounds(routeBounds, { padding: [42, 42], animate: false });
+      hasFitBoundsRef.current = true;
+    }
+  }, [map, routeBounds]);
+
+  useEffect(() => {
+    if (followBus) {
+      map.panTo(busLocation, { animate: true, duration: 0.25 });
+    }
+  }, [followBus, busLocation, map]);
+
+  return null;
+};
+
+const LiveBusMarker: React.FC<{
+  position: LatLngTuple;
+  status: Bus['status'];
+  children: React.ReactNode;
+}> = ({ position, status, children }) => {
+  const markerRef = useRef<LeafletMarker>(null);
+
+  useEffect(() => {
+    markerRef.current?.setLatLng(position);
+  }, [position[0], position[1]]);
+
+  return (
+    <Marker ref={markerRef} position={position} icon={busIcon(status, true)}>
+      {children}
+    </Marker>
+  );
+};
 
 export const SimulatedMap: React.FC<SimulatedMapProps> = ({
   showAllFleet = false,
   onSelectBus,
   selectedBusId,
+  busId,
+  tripState: tripStateProp,
 }) => {
-  const { buses, routes, tripState, startTrip, pauseTrip, resetDemoData, currentDriver } = useApp();
-  const [hoveredStop, setHoveredStop] = useState<string | null>(null);
+  const { buses, routes, tripState: contextTripState, getTripStateForBus } = useApp();
 
-  const primaryBus = buses.find((b) => b.id === (selectedBusId || 'bus-a101')) || buses[0];
-  const activeRoute = routes.find((r) => r.id === primaryBus.routeId) || routes[0];
-
-  // Map SVG Dimensions
+  const resolvedBusId = busId || selectedBusId || contextTripState.busId || 'bus-a101';
+  const primaryBus = buses.find((bus) => bus.id === resolvedBusId) || buses[0];
+  const activeTripState = tripStateProp ?? getTripStateForBus(primaryBus.id);
+  const activeRoute = routes.find((route) => route.id === primaryBus.routeId) || routes[0];
   const stops = activeRoute.stops;
+  const isActiveBus = primaryBus.id === activeTripState.busId;
+  const currentStopIndex = Math.min(
+    activeTripState.isTripActive
+      ? (activeTripState.currentStopIndex ?? primaryBus.currentStopIndex)
+      : primaryBus.currentStopIndex,
+    stops.length - 1
+  );
+  const currentStop = stops[currentStopIndex] || stops[0];
+  const nextStop = stops[Math.min(currentStopIndex + 1, stops.length - 1)] || currentStop;
 
-  // Calculate simulated bus coordinates based on progressPercent along SVG polyline
-  const calculateBusCoords = (progressPct: number) => {
-    if (!stops || stops.length === 0) return { x: 15, y: 70 };
-    if (progressPct <= 0) return { x: stops[0].x, y: stops[0].y };
-    if (progressPct >= 100) return { x: stops[stops.length - 1].x, y: stops[stops.length - 1].y };
+  const busLocation: LatLngTuple = useMemo(() => {
+    if (
+      activeTripState.isTripActive &&
+      typeof activeTripState.currentLatitude === 'number' &&
+      typeof activeTripState.currentLongitude === 'number'
+    ) {
+      return [activeTripState.currentLatitude, activeTripState.currentLongitude];
+    }
 
-    const segmentCount = stops.length - 1;
-    const totalProgress = (progressPct / 100) * segmentCount;
-    const segmentIndex = Math.min(Math.floor(totalProgress), segmentCount - 1);
-    const segmentFraction = totalProgress - segmentIndex;
+    if (typeof primaryBus.latitude === 'number' && typeof primaryBus.longitude === 'number') {
+      return [primaryBus.latitude, primaryBus.longitude];
+    }
 
-    const startStop = stops[segmentIndex];
-    const endStop = stops[segmentIndex + 1];
+    return getCoordinate(currentStop);
+  }, [
+    activeTripState.isTripActive,
+    activeTripState.currentLatitude,
+    activeTripState.currentLongitude,
+    primaryBus.latitude,
+    primaryBus.longitude,
+    currentStop,
+  ]);
 
-    const x = startStop.x + (endStop.x - startStop.x) * segmentFraction;
-    const y = startStop.y + (endStop.y - startStop.y) * segmentFraction;
+  const routePoints = useMemo(() => stops.map((stop) => getCoordinate(stop)), [stops]);
+  const travelledPath = useMemo(() => {
+    const path = routePoints.slice(0, Math.max(1, currentStopIndex + 1));
+    if (primaryBus.status !== 'Trip Completed') {
+      path.push(busLocation);
+    }
+    return path;
+  }, [busLocation, currentStopIndex, primaryBus.status, routePoints]);
 
-    return { x, y };
+  const routeBounds = useMemo<LatLngBoundsExpression>(() => {
+    if (routePoints.length === 0) {
+      return [[18.4, 73.6], [18.7, 73.9]];
+    }
+
+    return routePoints as LatLngBoundsExpression;
+  }, [routePoints]);
+
+  const stopStatus = (index: number) => {
+    if (activeTripState.tripStatus === 'COMPLETED' && index === stops.length - 1) return 'completed';
+    if (index < currentStopIndex) return 'completed';
+    if (index === currentStopIndex && activeTripState.tripStatus !== 'NOT_STARTED') return 'current';
+    if (index === currentStopIndex + 1) return 'next';
+    return 'upcoming';
   };
 
-  const busCoords = calculateBusCoords(primaryBus.progressPercent);
-
-  // SVG Road Polyline Points String
-  const polylinePoints = stops.map((s) => `${s.x},${s.y}`).join(' ');
-
-  // Current ETA calculation
-  const remainingStops = stops.length - 1 - primaryBus.currentStopIndex;
-  const etaMinutes = Math.max(2, remainingStops * 4);
-  const nextStop = stops[Math.min(primaryBus.currentStopIndex + 1, stops.length - 1)];
+  const statusPill =
+    primaryBus.status === 'On Route'
+      ? 'bg-emerald-500/15 text-emerald-700 border-emerald-200'
+      : primaryBus.status === 'Delayed'
+      ? 'bg-amber-500/15 text-amber-700 border-amber-200'
+      : primaryBus.status === 'Breakdown' || primaryBus.status === 'Emergency'
+      ? 'bg-rose-500/15 text-rose-700 border-rose-200'
+      : 'bg-slate-500/10 text-slate-600 border-slate-200';
 
   return (
-    <div className="relative w-full bg-slate-100 rounded-2xl border border-slate-300 shadow-sm overflow-hidden group">
-      
-      {/* Top Map HUD Header Overlay */}
-      <div className="absolute top-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-3 pointer-events-none">
-        
-        {/* Status Badge */}
-        <div className="pointer-events-auto bg-white/90 backdrop-blur-md border border-slate-200 px-3.5 py-2 rounded-xl flex items-center gap-2.5 shadow-md">
-          <span className="relative flex h-3 w-3">
-            <span
-              className={`animate-ping absolute inline-flex h-full w-full rounded-full ${
-                primaryBus.status === 'On Route'
-                  ? 'bg-emerald-400'
-                  : primaryBus.status === 'Breakdown' || primaryBus.status === 'Emergency'
-                  ? 'bg-rose-400'
-                  : 'bg-amber-400'
-              } opacity-75`}
-            />
-            <span
-              className={`relative inline-flex rounded-full h-3 w-3 ${
-                primaryBus.status === 'On Route'
-                  ? 'bg-emerald-500'
-                  : primaryBus.status === 'Breakdown' || primaryBus.status === 'Emergency'
-                  ? 'bg-rose-500'
-                  : 'bg-amber-500'
-              }`}
-            />
-          </span>
-          <div>
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Live Tracking GPS</div>
-            <div className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-              <span>Bus {primaryBus.busNumber}</span>
-              <span className="text-slate-400">•</span>
-              <span
-                className={`text-[11px] font-extrabold ${
-                  primaryBus.status === 'On Route'
-                    ? 'text-emerald-600'
-                    : primaryBus.status === 'Breakdown' || primaryBus.status === 'Emergency'
-                    ? 'text-rose-600'
-                    : 'text-amber-600'
-                }`}
-              >
-                {primaryBus.status}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Live Simulation Controls */}
-        <div className="pointer-events-auto bg-white/90 backdrop-blur-md border border-slate-200 p-1.5 rounded-xl flex items-center gap-1.5 shadow-md">
-          <button
-            onClick={() => startTrip('bus-a101')}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-xs"
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            <span className="hidden sm:inline">Start Simulation</span>
-          </button>
-
-          <button
-            onClick={() => pauseTrip('bus-a101')}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold transition shadow-xs"
-          >
-            <Pause className="w-3.5 h-3.5 fill-current" />
-            <span className="hidden sm:inline">{tripState.isPaused ? 'Resume' : 'Pause'}</span>
-          </button>
-
-          <button
-            onClick={resetDemoData}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition border border-slate-300"
-            title="Reset Route"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Reset</span>
-          </button>
+    <div className="leaflet-map-scope relative w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
+      <div className="absolute left-4 top-4 z-[10] pointer-events-none">
+        <div className={`pointer-events-auto rounded-2xl border px-4 py-3 shadow-xl backdrop-blur-md ${statusPill}`}>
+          <div className="text-[10px] font-black uppercase tracking-[0.28em] opacity-80">Live map</div>
+          <div className="mt-0.5 text-sm font-black">Bus {primaryBus.busNumber} · {primaryBus.status}</div>
         </div>
       </div>
 
-      {/* Custom Vector Map Canvas */}
-      <div className="relative w-full aspect-[16/9] min-h-[360px] sm:min-h-[420px] bg-[#E2E8F0] p-4">
-        
-        {/* Background Grid Pattern */}
-        <svg className="w-full h-full absolute inset-0 opacity-40 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#CBD5E1" strokeWidth="1" />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
-        </svg>
-
-        {/* Map SVG Layer */}
-        <svg className="w-full h-full relative z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-          
-          {/* River / Geographic Feature */}
-          <path
-            d="M 0,45 Q 30,60 50,40 T 100,55"
-            fill="none"
-            stroke="#94A3B8"
-            strokeWidth="6"
-            strokeLinecap="round"
-            opacity="0.4"
+      <div className="relative h-[560px] w-full sm:h-[620px]">
+        <MapContainer
+          center={busLocation}
+          zoom={13}
+          minZoom={11}
+          maxZoom={18}
+          zoomControl={false}
+          scrollWheelZoom
+          className="h-full w-full"
+        >
+          <ZoomControl position="bottomright" />
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          <MapViewportSync routeBounds={routeBounds} busLocation={busLocation} followBus={isActiveBus || showAllFleet} />
 
-          {/* Secondary Roads Grid */}
-          <path d="M 20,0 L 20,100 M 50,0 L 50,100 M 80,0 L 80,100" stroke="#CBD5E1" strokeWidth="1" strokeDasharray="2,2" />
-          <path d="M 0,30 L 100,30 M 0,70 L 100,70" stroke="#CBD5E1" strokeWidth="1" strokeDasharray="2,2" />
+          {routePoints.length > 1 && (
+            <>
+              <Polyline positions={routePoints} pathOptions={{ color: '#2563eb', weight: 6, opacity: 0.22 }} />
+              <Polyline positions={routePoints} pathOptions={{ color: '#2563eb', weight: 4, opacity: 0.78, dashArray: '10 10' }} />
+              <Polyline positions={travelledPath} pathOptions={{ color: '#16a34a', weight: 5, opacity: 0.92 }} />
+            </>
+          )}
 
-          {/* Main Bus Route Path Outer Glow */}
-          <polyline
-            points={polylinePoints}
-            fill="none"
-            stroke="#2563eb"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity="0.2"
-            className="blur-xs"
-          />
-
-          {/* Main Bus Route Path */}
-          <polyline
-            points={polylinePoints}
-            fill="none"
-            stroke="#3b82f6"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray="3,1.5"
-          />
-
-          {/* Bus Route Traveled Track */}
-          <polyline
-            points={polylinePoints}
-            fill="none"
-            stroke="#10b981"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray={`${primaryBus.progressPercent}, 100`}
-          />
-
-          {/* Bus Stop Nodes */}
-          {stops.map((stop, idx) => {
-            const isPassed = idx <= primaryBus.currentStopIndex;
-            const isNext = idx === primaryBus.currentStopIndex + 1;
-            const isHovered = hoveredStop === stop.id;
+          {stops.map((stop, index) => {
+            const position = getCoordinate(stop);
+            const status = stopStatus(index) as 'completed' | 'current' | 'next' | 'upcoming';
 
             return (
-              <g
-                key={stop.id}
-                onMouseEnter={() => setHoveredStop(stop.id)}
-                onMouseLeave={() => setHoveredStop(null)}
-                className="cursor-pointer transition-transform"
-              >
-                {/* Pulse Ring for Next Stop */}
-                {isNext && (
-                  <circle cx={stop.x} cy={stop.y} r="3.5" fill="none" stroke="#d97706" strokeWidth="0.8" className="animate-ping" />
-                )}
-
-                {/* Stop Outer Circle */}
-                <circle
-                  cx={stop.x}
-                  cy={stop.y}
-                  r={isHovered ? '2.8' : '2.2'}
-                  fill={isPassed ? '#10b981' : isNext ? '#f59e0b' : '#64748b'}
-                  stroke="#ffffff"
-                  strokeWidth="0.8"
-                />
-
-                {/* Stop Center Dot */}
-                <circle cx={stop.x} cy={stop.y} r="0.8" fill="#ffffff" />
-
-                {/* Stop Label */}
-                <text
-                  x={stop.x}
-                  y={stop.y + 4.5}
-                  fontSize="2.4"
-                  fontWeight="bold"
-                  fill={isPassed ? '#047857' : isNext ? '#b45309' : '#475569'}
-                  textAnchor="middle"
-                  className="select-none font-sans"
-                >
-                  {stop.name}
-                </text>
-              </g>
+              <Marker key={stop.id} position={position} icon={stopIcon(status)}>
+                <Popup>
+                  <div className="space-y-1.5">
+                    <div className="text-sm font-black text-slate-900">{stop.name}</div>
+                    <div className="text-xs text-slate-600">
+                      {status === 'completed'
+                        ? 'Completed'
+                        : status === 'current'
+                        ? 'Current stop'
+                        : status === 'next'
+                        ? 'Next stop'
+                        : 'Upcoming stop'}
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
             );
           })}
 
-          {/* Student Location Pin (Shivajinagar Area) */}
-          <g transform="translate(48, 38)">
-            <circle cx="0" cy="0" r="4" fill="none" stroke="#db2777" strokeWidth="0.5" className="animate-ping" />
-            <circle cx="0" cy="0" r="1.8" fill="#db2777" stroke="#ffffff" strokeWidth="0.5" />
-            <text x="0" y="-3" fontSize="2" fontWeight="extrabold" fill="#be185d" textAnchor="middle">
-              Vedika (You)
-            </text>
-          </g>
-
-          {/* Multi-Bus Fleet Render for Admin view */}
           {showAllFleet &&
-            buses.map((busItem) => {
-              if (busItem.id === primaryBus.id) return null; // rendered below with priority
-              const coords = calculateBusCoords(busItem.progressPercent);
+            buses.map((bus) => {
+              const busRoute = routes.find((route) => route.id === bus.routeId) || activeRoute;
+              const busStops = busRoute.stops;
+              const busStopIndex = Math.min(bus.currentStopIndex, busStops.length - 1);
+              const fallback = getCoordinate(busStops[busStopIndex] || busStops[0]);
+              const busPosition: LatLngTuple = typeof bus.latitude === 'number' && typeof bus.longitude === 'number' ? [bus.latitude, bus.longitude] : fallback;
+
               return (
-                <g
-                  key={busItem.id}
-                  onClick={() => onSelectBus && onSelectBus(busItem)}
-                  className="cursor-pointer hover:scale-125 transition-transform"
+                <Marker
+                  key={bus.id}
+                  position={busPosition}
+                  icon={busIcon(bus.status, bus.id === primaryBus.id)}
+                  eventHandlers={{ click: () => onSelectBus?.(bus) }}
                 >
-                  <circle cx={coords.x} cy={coords.y} r="2.2" fill="#4f46e5" stroke="#ffffff" strokeWidth="0.6" />
-                  <text x={coords.x} y={coords.y - 3} fontSize="2" fontWeight="bold" fill="#3730a3" textAnchor="middle">
-                    Bus {busItem.busNumber}
-                  </text>
-                </g>
+                  <Popup>
+                    <div className="space-y-1.5">
+                      <div className="text-sm font-black text-slate-900">Bus {bus.busNumber}</div>
+                      <div className="text-xs text-slate-600">{bus.driverName}</div>
+                      <div className="text-[11px] text-slate-500">{bus.status}</div>
+                    </div>
+                  </Popup>
+                </Marker>
               );
             })}
 
-          {/* Primary Moving Bus Marker */}
-          <g
-            transform={`translate(${busCoords.x}, ${busCoords.y})`}
-            className="transition-all duration-500 ease-out cursor-pointer"
-          >
-            {/* Animated Pulsing Radar Outer Ring */}
-            <circle
-              cx="0"
-              cy="0"
-              r="6"
-              fill="none"
-              stroke={
-                primaryBus.status === 'On Route'
-                  ? '#2563eb'
-                  : primaryBus.status === 'Breakdown' || primaryBus.status === 'Emergency'
-                  ? '#dc2626'
-                  : '#d97706'
-              }
-              strokeWidth="0.6"
-              className="animate-ping"
-            />
-
-            {/* Bus Base Disc */}
-            <circle
-              cx="0"
-              cy="0"
-              r="3.2"
-              fill={
-                primaryBus.status === 'On Route'
-                  ? '#2563eb'
-                  : primaryBus.status === 'Breakdown' || primaryBus.status === 'Emergency'
-                  ? '#dc2626'
-                  : '#d97706'
-              }
-              stroke="#ffffff"
-              strokeWidth="0.8"
-              className="shadow-lg"
-            />
-
-            {/* Bus Inner Symbol */}
-            <text x="0" y="0.8" fontSize="2" fontWeight="extrabold" fill="#ffffff" textAnchor="middle">
-              🚌
-            </text>
-
-            {/* Bus Number Callout Tag */}
-            <g transform="translate(0, -5)">
-              <rect x="-8" y="-3.5" width="16" height="4.5" rx="1.5" fill="#0f172a" stroke="#38bdf8" strokeWidth="0.4" />
-              <text x="0" y="-0.5" fontSize="2" fontWeight="black" fill="#38bdf8" textAnchor="middle">
-                A-101 • {primaryBus.speedKmH} km/h
-              </text>
-            </g>
-          </g>
-        </svg>
-
-        {/* Hover Stop Tooltip Overlay */}
-        {hoveredStop && (
-          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 bg-white border border-slate-200 text-slate-800 px-3 py-1.5 rounded-xl shadow-xl text-xs font-bold flex items-center gap-2">
-            <MapPin className="w-3.5 h-3.5 text-blue-600" />
-            <span>Stop: {stops.find((s) => s.id === hoveredStop)?.name}</span>
-          </div>
-        )}
+          <LiveBusMarker position={busLocation} status={primaryBus.status}>
+            <Popup>
+              <div className="space-y-1.5">
+                <div className="text-sm font-black text-slate-900">Bus {primaryBus.busNumber}</div>
+                <div className="text-xs text-slate-600">{primaryBus.driverName}</div>
+                <div className="text-[11px] text-slate-500">Current location: {activeTripState.currentLocationLabel || currentStop?.name}</div>
+                <div className="text-[11px] text-slate-500">Next stop: {activeTripState.nextStopName || nextStop?.name}</div>
+              </div>
+            </Popup>
+          </LiveBusMarker>
+        </MapContainer>
       </div>
-
-      {/* Bottom Telemetry HUD Bar */}
-      <div className="p-4 bg-white border-t border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 text-slate-800">
-        
-        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-            <Navigation className="w-3 h-3 text-blue-600" /> Next Bus Stop
-          </div>
-          <div className="text-xs sm:text-sm font-bold text-slate-900 truncate mt-0.5">
-            {nextStop ? nextStop.name : 'Destination Reached'}
-          </div>
-        </div>
-
-        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-            <Zap className="w-3 h-3 text-amber-500" /> Est. Arrival Time
-          </div>
-          <div className="text-xs sm:text-sm font-bold text-amber-600 mt-0.5">
-            {primaryBus.status === 'Trip Completed' ? 'Arrived' : `${etaMinutes} minutes`}
-          </div>
-        </div>
-
-        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-            <Compass className="w-3 h-3 text-emerald-600" /> Current Speed
-          </div>
-          <div className="text-xs sm:text-sm font-bold text-emerald-600 mt-0.5">
-            {primaryBus.speedKmH} km/h
-          </div>
-        </div>
-
-        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-            <User className="w-3 h-3 text-indigo-600" /> Assigned Driver
-          </div>
-          <div className="text-xs sm:text-sm font-bold text-slate-900 truncate mt-0.5 flex items-center justify-between">
-            <span>{primaryBus.driverName}</span>
-            <a
-              href={`tel:${primaryBus.driverPhone}`}
-              className="text-xs text-blue-600 hover:text-blue-700 p-0.5"
-              title="Call Driver"
-            >
-              <Phone className="w-3 h-3" />
-            </a>
-          </div>
-        </div>
-
-      </div>
-
     </div>
   );
 };

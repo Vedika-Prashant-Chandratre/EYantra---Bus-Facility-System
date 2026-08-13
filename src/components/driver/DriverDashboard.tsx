@@ -1,165 +1,282 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { SimulatedMap } from '../map/SimulatedMap';
-import { EmergencyModal } from './EmergencyModal';
-import { Truck, Play, Pause, Square, AlertTriangle, ShieldAlert, Phone, Navigation, CheckCircle2, User, Clock, MapPin } from 'lucide-react';
-import { Incident } from '../../types';
+import { RouteTimeline } from '../common/RouteTimeline';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  Pause,
+  Play,
+  Route,
+  ShieldAlert,
+  Square,
+  Truck,
+} from 'lucide-react';
 
 export const DriverDashboard: React.FC = () => {
-  const { currentDriver, buses, routes, tripState, startTrip, pauseTrip, endTrip, reportIncident } = useApp();
-  const [selectedEmergency, setSelectedEmergency] = useState<Incident['type'] | null>(null);
+  const {
+    selectedDriverId,
+    selectDriver,
+    currentDriver,
+    buses,
+    routes,
+    tripState,
+    startTrip,
+    pauseTrip,
+    resumeTrip,
+    endTrip,
+    reportDelay,
+    reportBreakdown,
+    reportEmergency,
+    triggerSOS,
+  } = useApp();
   const [reportedMessage, setReportedMessage] = useState<string | null>(null);
 
-  const assignedBus = buses.find((b) => b.id === currentDriver.assignedBusId) || buses[0];
-  const assignedRoute = routes.find((r) => r.id === currentDriver.assignedRouteId) || routes[0];
+  const assignedBus = buses.find((bus) => bus.id === currentDriver.assignedBusId) || buses[0];
+  const assignedRoute = routes.find((route) => route.id === currentDriver.assignedRouteId) || routes[0];
 
-  const handleConfirmEmergency = (desc: string) => {
-    if (selectedEmergency) {
-      reportIncident(selectedEmergency, desc);
-      setReportedMessage(`Incident (${selectedEmergency}) reported successfully. Administrator notified.`);
-      setSelectedEmergency(null);
-      setTimeout(() => setReportedMessage(null), 5000);
+  const currentStopLabel = tripState.currentLocationLabel || tripState.currentStopName || assignedRoute.startPoint;
+  const nextStopLabel = tripState.nextStopName || assignedRoute.endPoint;
+  const distanceLabel = `${(tripState.distanceToNextStopKm ?? 0).toFixed(1)} km`;
+  const etaLabel = `~${tripState.etaNextStopMin ?? 0} min`;
+  const canEndTrip =
+    tripState.tripStatus !== 'NOT_STARTED' &&
+    tripState.tripStatus !== 'COMPLETED' &&
+    (tripState.isTripActive || tripState.tripStatus === 'AT_STOP' || tripState.tripStatus === 'DELAYED');
+
+  const showMessage = (message: string) => {
+    setReportedMessage(message);
+    window.setTimeout(() => setReportedMessage(null), 3500);
+  };
+
+  const handleStartTrip = () => {
+    if (tripState.tripStatus === 'COMPLETED') {
+      startTrip(assignedBus.id);
+      showMessage('New trip started.');
+      return;
     }
+
+    if (tripState.tripStatus === 'NOT_STARTED') {
+      startTrip(assignedBus.id);
+      showMessage('Trip started. Student and admin views are now synced to the live route.');
+      return;
+    }
+
+    if (tripState.isPaused) {
+      resumeTrip(assignedBus.id);
+      showMessage('Trip resumed.');
+      return;
+    }
+
+    pauseTrip(assignedBus.id);
+    showMessage('Trip paused safely.');
+  };
+
+  const handleEndTrip = () => {
+    if (!window.confirm('End this trip now?')) return;
+    endTrip(assignedBus.id);
+    showMessage('Trip completed.');
+  };
+
+  const handleDelay = (reason: 'Traffic' | 'Mechanical issue' | 'Other') => {
+    if (!window.confirm(`Report delay due to ${reason.toLowerCase()}?`)) return;
+    reportDelay(reason);
+    showMessage(`Delay reported: ${reason}.`);
+  };
+
+  const handleBreakdown = () => {
+    if (!window.confirm('Report a breakdown?')) return;
+    reportBreakdown('Driver reported a mechanical breakdown from the active bus.');
+    showMessage('Breakdown incident created.');
+  };
+
+  const handleEmergency = (type: 'ACCIDENT' | 'MEDICAL EMERGENCY' | 'OTHER ISSUE') => {
+    if (!window.confirm(`Report ${type.toLowerCase()}?`)) return;
+    reportEmergency(type);
+    showMessage(`${type} reported.`);
+  };
+
+  const handleSOS = () => {
+    if (!window.confirm('Trigger SOS?')) return;
+    triggerSOS('SOS triggered by driver from the active route.');
+    showMessage('SOS dispatched.');
   };
 
   return (
     <div className="space-y-6 pb-8">
-      
-      {/* Top Banner & Driver Assignment Info */}
-      <div className="bg-[#0F172A] rounded-2xl border border-slate-800 p-6 shadow-lg text-white flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex items-center gap-4">
-          <img
-            src={currentDriver.photoUrl}
-            alt={currentDriver.name}
-            className="w-16 h-16 rounded-xl object-cover ring-2 ring-indigo-500/40 shadow-md"
-          />
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-white">{currentDriver.name}</h1>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                DRIVER CONSOLE
-              </span>
+      <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 text-white shadow-2xl">
+        <div className="p-6 sm:p-8">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div className="flex items-start gap-4">
+              <img
+                src={currentDriver.photoUrl}
+                alt={currentDriver.name}
+                className="h-16 w-16 rounded-2xl object-cover ring-2 ring-blue-500/40"
+              />
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-blue-400/30 bg-blue-500/15 px-3 py-1 text-[11px] font-black uppercase tracking-[0.3em] text-blue-200">
+                  Driver console
+                </div>
+                <h1 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-3xl">{currentDriver.name}</h1>
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Truck className="h-3.5 w-3.5 text-blue-300" />
+                    Bus {assignedBus.busNumber}
+                  </span>
+                  <span className="text-slate-600">•</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <Route className="h-3.5 w-3.5 text-emerald-300" />
+                    {assignedRoute.code} · {assignedRoute.name}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="text-xs text-slate-300 mt-1 flex flex-wrap items-center gap-3">
-              <span>Assigned Bus: <strong className="text-white font-mono">{assignedBus.busNumber} ({assignedBus.registrationNumber})</strong></span>
-              <span>•</span>
-              <span>Route: <strong className="text-blue-300 font-semibold">{assignedRoute.code} ({assignedRoute.name})</strong></span>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[420px]">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">Current stop</div>
+                <div className="mt-1 text-lg font-black text-white">{currentStopLabel}</div>
+                <div className="mt-2 text-xs text-slate-400">Next: {nextStopLabel}</div>
+              </div>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">Distance / ETA</div>
+                <div className="mt-1 text-lg font-black text-white">{distanceLabel} · {etaLabel}</div>
+                <div className="mt-2 text-xs text-slate-400">
+                  {tripState.tripStatus === 'COMPLETED' ? 'Trip completed' : `Progress ${Math.round(tripState.routeProgressPercent ?? 0)}%`}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Trip Status Indicator */}
-        <div className="bg-slate-800/90 p-4 rounded-xl border border-slate-700 shrink-0 text-center sm:text-right">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Trip Operational Status</div>
-          <div className="text-sm font-bold mt-1 flex items-center justify-center sm:justify-end gap-1.5">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                assignedBus.status === 'On Route'
-                  ? 'bg-emerald-400 animate-ping'
-                  : assignedBus.status === 'Trip Completed'
-                  ? 'bg-blue-400'
-                  : 'bg-amber-400'
-              }`}
-            />
-            <span
-              className={
-                assignedBus.status === 'On Route'
-                  ? 'text-emerald-400'
-                  : assignedBus.status === 'Trip Completed'
-                  ? 'text-blue-400'
-                  : 'text-amber-400'
-              }
-            >
-              {assignedBus.status}
-            </span>
+          <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-xs text-slate-300">
+              <span className="font-black uppercase tracking-[0.28em] text-slate-500">Select driver</span>
+              <div className="relative">
+                <select
+                  value={selectedDriverId}
+                  onChange={(event) => selectDriver(event.target.value)}
+                  className="appearance-none rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 pr-8 text-sm font-semibold text-white outline-none transition focus:border-blue-400"
+                >
+                  {[
+                    { id: 'drv-1', label: 'Rahul Patil' },
+                    { id: 'drv-2', label: 'Amit Shinde' },
+                    { id: 'drv-3', label: 'Sagar More' },
+                  ].map((driver) => (
+                    <option key={driver.id} value={driver.id}>
+                      {driver.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleStartTrip}
+                disabled={false}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {tripState.tripStatus === 'NOT_STARTED' || tripState.tripStatus === 'COMPLETED' ? (
+                  <Play className="h-3.5 w-3.5 shrink-0" />
+                ) : tripState.isPaused ? (
+                  <Play className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <Pause className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <span className="whitespace-nowrap">
+                  {tripState.tripStatus === 'NOT_STARTED' || tripState.tripStatus === 'COMPLETED'
+                    ? 'Start Trip'
+                    : tripState.isPaused
+                    ? 'Resume Trip'
+                    : 'Pause Trip'}
+                </span>
+              </button>
+              <button
+                onClick={handleEndTrip}
+                disabled={!canEndTrip}
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-600 bg-slate-800 px-4 text-xs font-bold text-slate-200 transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Square className="h-3.5 w-3.5 shrink-0" />
+                <span className="whitespace-nowrap">End Trip</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       {reportedMessage && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-xs">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+        <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm">
+          <CheckCircle2 className="h-5 w-5 text-emerald-600" />
           <span>{reportedMessage}</span>
         </div>
       )}
 
-      {/* Prominent Trip Control Buttons */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm text-slate-800 space-y-4">
-        <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-          <Navigation className="w-4 h-4 text-blue-600" /> Today's Trip Commands (College → Kothrud)
-        </h2>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.95fr]">
+        <div className="space-y-6">
+          <SimulatedMap busId={assignedBus.id} tripState={tripState} />
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <button
-            onClick={() => startTrip('bus-a101')}
-            disabled={assignedBus.status === 'On Route' && !tripState.isPaused}
-            className="py-3.5 px-6 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold text-xs sm:text-sm rounded-lg shadow-sm transition flex items-center justify-center gap-2"
-          >
-            <Play className="w-4 h-4 fill-current" />
-            <span>START TRIP</span>
-          </button>
+          <div className="rounded-2xl border border-rose-200 bg-rose-50/80 p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.24em] text-rose-700">
+                <ShieldAlert className="h-3.5 w-3.5" /> Safety actions
+              </div>
+              <div className="mt-3 space-y-2">
+                <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-rose-600">Report delay</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(['Traffic', 'Mechanical issue', 'Other'] as const).map((reason) => (
+                    <button
+                      key={reason}
+                      onClick={() => handleDelay(reason)}
+                      className="h-8 rounded-lg border border-rose-200 bg-white px-2 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100 whitespace-nowrap"
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
 
-          <button
-            onClick={() => pauseTrip('bus-a101')}
-            disabled={assignedBus.status !== 'On Route'}
-            className="py-3.5 px-6 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-semibold text-xs sm:text-sm rounded-lg shadow-sm transition flex items-center justify-center gap-2"
-          >
-            <Pause className="w-4 h-4 fill-current" />
-            <span>{tripState.isPaused ? 'RESUME TRIP' : 'PAUSE TRIP'}</span>
-          </button>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={handleBreakdown}
+                    className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-rose-300 bg-white px-2 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100"
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    <span className="whitespace-nowrap">Breakdown</span>
+                  </button>
+                  <button
+                    onClick={() => handleEmergency('ACCIDENT')}
+                    className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-rose-300 bg-white px-2 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100"
+                  >
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    <span className="whitespace-nowrap">Emergency</span>
+                  </button>
+                </div>
 
-          <button
-            onClick={() => endTrip('bus-a101')}
-            disabled={assignedBus.status === 'Trip Completed'}
-            className="py-3.5 px-6 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-semibold text-xs sm:text-sm rounded-lg shadow-sm transition flex items-center justify-center gap-2"
-          >
-            <Square className="w-4 h-4 fill-current" />
-            <span>END TRIP</span>
-          </button>
-        </div>
-      </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(['ACCIDENT', 'MEDICAL EMERGENCY', 'OTHER ISSUE'] as const).map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => handleEmergency(type)}
+                      className="h-8 rounded-lg border border-rose-200 bg-white px-1.5 text-[10px] font-semibold leading-tight text-rose-700 transition hover:bg-rose-100"
+                    >
+                      {type === 'MEDICAL EMERGENCY' ? 'Medical' : type === 'OTHER ISSUE' ? 'Other' : 'Accident'}
+                    </button>
+                  ))}
+                </div>
 
-      {/* Driver Emergency / SOS Section */}
-      <div className="bg-rose-50 rounded-xl border border-rose-200 p-6 shadow-xs text-rose-950 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <ShieldAlert className="w-6 h-6 text-rose-600 animate-pulse" />
-            <div>
-              <h2 className="text-sm font-bold text-rose-900">DRIVER EMERGENCY & SOS SYSTEM</h2>
-              <p className="text-xs text-rose-700">Tap any button to dispatch an emergency SOS to Administrator & Students.</p>
+                <button
+                  onClick={handleSOS}
+                  className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-rose-600 px-3 text-xs font-black tracking-wide text-white shadow transition hover:bg-rose-700"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  <span>SOS</span>
+                </button>
+              </div>
             </div>
-          </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          {(['ACCIDENT', 'BREAKDOWN', 'MEDICAL EMERGENCY', 'OTHER ISSUE', 'SOS'] as const).map((type) => (
-            <button
-              key={type}
-              onClick={() => setSelectedEmergency(type)}
-              className="py-3 px-3 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-lg shadow-sm transition flex flex-col items-center justify-center gap-1.5 hover:scale-105"
-            >
-              <AlertTriangle className="w-4 h-4" />
-              <span>{type}</span>
-            </button>
-          ))}
-        </div>
+        <RouteTimeline route={assignedRoute} tripState={tripState} />
       </div>
-
-      {/* Driver Live Route Map View */}
-      <div className="space-y-3">
-        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Live Route Map View</h3>
-        <SimulatedMap />
-      </div>
-
-      {/* Emergency Confirmation Modal */}
-      {selectedEmergency && (
-        <EmergencyModal
-          type={selectedEmergency}
-          onClose={() => setSelectedEmergency(null)}
-          onConfirm={handleConfirmEmergency}
-        />
-      )}
-
     </div>
   );
 };

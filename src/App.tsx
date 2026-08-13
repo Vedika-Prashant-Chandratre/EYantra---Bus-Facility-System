@@ -3,7 +3,6 @@ import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/common/Navbar';
 import { Sidebar } from './components/common/Sidebar';
 import { BottomNav } from './components/common/BottomNav';
-import { DemoControlPanel } from './components/common/DemoControlModal';
 import { LoginScreen } from './components/auth/LoginScreen';
 
 // Student Components
@@ -56,13 +55,13 @@ const AppContent: React.FC = () => {
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {/* Main Workspace Layout */}
-      <div className="flex-1 max-w-7xl w-full mx-auto flex">
+      <div className="flex-1 max-w-7xl w-full mx-auto flex relative z-0">
         
         {/* Desktop Sidebar */}
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
         {/* Dynamic View Viewport */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto min-h-[calc(100vh-4rem)]">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto min-h-[calc(100vh-4rem)] relative z-0">
           
           {/* Student Views */}
           {role === 'student' && (
@@ -104,9 +103,6 @@ const AppContent: React.FC = () => {
 
         </main>
       </div>
-
-      {/* Floating Presentation Demo Control Panel */}
-      <DemoControlPanel />
 
       {/* Mobile Bottom Navigation */}
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />

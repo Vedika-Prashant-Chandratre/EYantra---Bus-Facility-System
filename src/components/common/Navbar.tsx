@@ -22,7 +22,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   };
 
   return (
-    <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-40 shadow-md">
+    <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-[60] shadow-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         
         {/* Brand Logo */}
@@ -111,7 +111,11 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
                   : 'Transport Controller'}
               </div>
               <div className="text-[10px] text-slate-400 capitalize">
-                {role === 'student' ? 'Route A • STU2026001' : role === 'driver' ? 'MH 12 AB 1234' : 'Transport Admin'}
+                {role === 'student'
+                  ? `${currentStudent.name.split(' ')[0]} • ${currentStudent.studentId}`
+                  : role === 'driver'
+                  ? currentDriver.name
+                  : 'Transport Admin'}
               </div>
             </div>
           </div>

@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Users, Search, Filter, ShieldCheck, Check, X, Eye } from 'lucide-react';
 
 export const StudentManagement: React.FC = () => {
-  const { students, approvePass, rejectPass } = useApp();
+  const { students, routes, buses, approvePass, rejectPass } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
@@ -74,18 +74,23 @@ export const StudentManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
-              {filteredStudents.map((stu) => (
-                <tr key={stu.id} className="hover:bg-slate-50/80 transition">
-                  <td className="p-4 font-bold text-slate-900 flex items-center gap-3">
-                    <img src={stu.photoUrl} alt={stu.name} className="w-9 h-9 rounded-full object-cover ring-2 ring-blue-500/20" />
-                    <div>
-                      <div className="text-sm font-bold text-slate-900">{stu.name}</div>
-                      <div className="text-[11px] text-slate-500 font-normal">{stu.email}</div>
-                    </div>
-                  </td>
-                  <td className="p-4 font-mono font-bold text-blue-600">{stu.studentId}</td>
-                  <td className="p-4 text-slate-700">{stu.department}</td>
-                  <td className="p-4 text-slate-700">Route A (Bus A-101)</td>
+              {filteredStudents.map((stu) => {
+                const assignedRoute = routes.find((r) => r.id === stu.assignedRouteId);
+                const assignedBus = buses.find((b) => b.id === stu.assignedBusId);
+                return (
+                  <tr key={stu.id} className="hover:bg-slate-50/80 transition">
+                    <td className="p-4 font-bold text-slate-900 flex items-center gap-3">
+                      <img src={stu.photoUrl} alt={stu.name} className="w-9 h-9 rounded-full object-cover ring-2 ring-blue-500/20" />
+                      <div>
+                        <div className="text-sm font-bold text-slate-900">{stu.name}</div>
+                        <div className="text-[11px] text-slate-500 font-normal">{stu.email}</div>
+                      </div>
+                    </td>
+                    <td className="p-4 font-mono font-bold text-blue-600">{stu.studentId}</td>
+                    <td className="p-4 text-slate-700">{stu.department}</td>
+                    <td className="p-4 text-slate-700">
+                      {assignedRoute?.code || 'Route'} ({assignedBus?.busNumber || 'Bus'})
+                    </td>
                   <td className="p-4">
                     <span
                       className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
@@ -118,7 +123,8 @@ export const StudentManagement: React.FC = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+              );
+            })}
             </tbody>
           </table>
         </div>

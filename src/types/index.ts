@@ -7,6 +7,11 @@ export interface BusStop {
   name: string;
   x: number; // SVG map X percentage (0-100)
   y: number; // SVG map Y percentage (0-100)
+  latitude?: number;
+  longitude?: number;
+  sequence?: number;
+  distanceFromPreviousStopKm?: number;
+  estimatedTravelTimeFromPreviousStopMin?: number;
   estimatedMinutesFromStart: number;
   status?: 'Departed' | 'Arriving Soon' | 'Upcoming';
 }
@@ -40,6 +45,7 @@ export interface Bus {
   latitude?: number;
   longitude?: number;
   lastUpdated: string;
+  simulationState?: TripState;
 }
 
 export interface Driver {
@@ -124,12 +130,26 @@ export interface AppNotification {
 }
 
 export interface TripState {
+  tripStatus: 'NOT_STARTED' | 'ACTIVE' | 'AT_STOP' | 'DELAYED' | 'BREAKDOWN' | 'EMERGENCY' | 'COMPLETED';
+  stopStatus: 'UPCOMING' | 'CURRENT' | 'ARRIVED' | 'DEPARTED' | 'COMPLETED';
   isTripActive: boolean;
+  isPaused: boolean;
   startTime?: string;
   endTime?: string;
+  routeId?: string;
+  busId?: string;
+  currentStopId?: string;
+  nextStopId?: string;
+  currentStopIndex: number;
   currentStopName: string;
   nextStopName: string;
   etaNextStopMin: number;
+  distanceToNextStopKm: number;
+  routeProgressPercent: number;
+  currentLatitude?: number;
+  currentLongitude?: number;
+  currentLocationLabel?: string;
+  completedStops: number;
+  totalStops: number;
   simulationSpeed: number; // 1, 2, 5
-  isPaused: boolean;
 }

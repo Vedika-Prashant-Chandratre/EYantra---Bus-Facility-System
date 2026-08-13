@@ -1,110 +1,66 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
-import { MapPin, Clock, Bus as BusIcon, User, Phone, CheckCircle2, Navigation } from 'lucide-react';
+import { RouteTimeline } from '../common/RouteTimeline';
+import { StudentSelector } from '../common/StudentSelector';
+import { MapPin, Phone } from 'lucide-react';
 
 export const RouteDetailsView: React.FC = () => {
-  const { routes, buses, currentStudent } = useApp();
+  const { routes, buses, currentStudent, getTripStateForBus } = useApp();
 
-  const assignedRoute = routes.find((r) => r.id === currentStudent.assignedRouteId) || routes[0];
-  const assignedBus = buses.find((b) => b.id === currentStudent.assignedBusId) || buses[0];
+  const assignedRoute = routes.find((route) => route.id === currentStudent.assignedRouteId) || routes[0];
+  const assignedBus = buses.find((bus) => bus.id === currentStudent.assignedBusId) || buses[0];
+  const studentTripState = getTripStateForBus(assignedBus.id);
 
   return (
     <div className="space-y-6 pb-8">
-      
-      {/* Route Header */}
-      <div className="bg-[#0F172A] rounded-2xl border border-slate-800 p-6 shadow-lg text-white space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800">
-          <div>
-            <div className="text-xs font-bold text-blue-400 uppercase tracking-widest">ASSIGNED BUS ROUTE</div>
-            <h1 className="text-2xl font-bold text-white mt-0.5">{assignedRoute.code} – {assignedRoute.name}</h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Terminal: {assignedRoute.startPoint} ➔ Destination: {assignedRoute.endPoint}
-            </p>
+      <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 text-white shadow-2xl">
+        <div className="p-6 sm:p-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-300">Assigned bus route</div>
+              <h1 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
+                {assignedRoute.code} · {assignedRoute.name}
+              </h1>
+              <p className="mt-2 text-xs text-slate-300">
+                Terminal: {assignedRoute.startPoint} · Destination: {assignedRoute.endPoint}
+              </p>
+            </div>
+
+            <StudentSelector className="border-slate-700 bg-slate-900 text-white [&_span]:text-slate-400 [&_select]:border-slate-700 [&_select]:bg-slate-950 [&_select]:text-white" />
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-800/90 p-3 rounded-xl border border-slate-700 text-xs font-semibold">
-            <span className="text-slate-400">Total Distance:</span>
-            <span className="text-blue-300 font-bold">{assignedRoute.distanceKm} km</span>
-            <span className="text-slate-600">•</span>
-            <span className="text-slate-400">Duration:</span>
-            <span className="text-amber-400 font-bold">{assignedRoute.totalDurationMin} min</span>
-          </div>
-        </div>
-
-        {/* Driver & Bus Info Box */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-800/60 p-4 rounded-xl border border-slate-700 text-xs">
-          <div>
-            <span className="text-slate-400 block font-medium">Assigned Bus:</span>
-            <strong className="text-slate-100 text-sm font-bold">{assignedBus.busNumber} ({assignedBus.registrationNumber})</strong>
-          </div>
-          <div>
-            <span className="text-slate-400 block font-medium">Bus Driver:</span>
-            <strong className="text-slate-100 text-sm font-bold">{assignedBus.driverName}</strong>
-          </div>
-          <div>
-            <span className="text-slate-400 block font-medium">Contact Number:</span>
-            <a href={`tel:${assignedBus.driverPhone}`} className="text-blue-300 hover:text-blue-200 font-bold flex items-center gap-1 mt-0.5">
-              <Phone className="w-3.5 h-3.5" />
-              <span>{assignedBus.driverPhone}</span>
-            </a>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4 text-xs">
+              <div className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">Bus</div>
+              <div className="mt-1 text-sm font-black text-white">{assignedBus.busNumber}</div>
+              <div className="mt-1 text-slate-400">{assignedBus.registrationNumber}</div>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4 text-xs">
+              <div className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">Driver</div>
+              <div className="mt-1 text-sm font-black text-white">{assignedBus.driverName}</div>
+              <a href={`tel:${assignedBus.driverPhone}`} className="mt-1 inline-flex items-center gap-1 text-slate-300 transition hover:text-white">
+                <Phone className="h-3.5 w-3.5" /> {assignedBus.driverPhone}
+              </a>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4 text-xs">
+              <div className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">Live status</div>
+              <div className="mt-1 text-sm font-black text-white">{studentTripState.tripStatus}</div>
+              <div className="mt-1 text-slate-400">ETA ~{studentTripState.etaNextStopMin ?? 0} min</div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Stops Breakdown Table */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm text-slate-800 space-y-4">
-        <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-          <MapPin className="w-5 h-5 text-blue-600" /> Route Stops & Arrival Schedule
-        </h2>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-700">
-            <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
-              <tr>
-                <th className="p-3.5 rounded-l-lg">#</th>
-                <th className="p-3.5">Stop Name</th>
-                <th className="p-3.5">Estimated Arrival</th>
-                <th className="p-3.5">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {assignedRoute.stops.map((stop, index) => {
-                const isPassed = index <= assignedBus.currentStopIndex;
-                const isNext = index === assignedBus.currentStopIndex + 1;
-
-                return (
-                  <tr key={stop.id} className="hover:bg-slate-50/80 transition">
-                    <td className="p-3.5 font-bold text-slate-400">{index + 1}</td>
-                    <td className="p-3.5 text-slate-900 font-bold flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${isPassed ? 'bg-emerald-500' : isNext ? 'bg-amber-500' : 'bg-slate-300'}`} />
-                      {stop.name}
-                    </td>
-                    <td className="p-3.5 text-slate-600 font-mono">
-                      {stop.estimatedMinutesFromStart === 0
-                        ? '08:00 AM (Departed)'
-                        : `${stop.estimatedMinutesFromStart} min from start`}
-                    </td>
-                    <td className="p-3.5">
-                      <span
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold ${
-                          isPassed
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                            : isNext
-                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                            : 'bg-slate-100 text-slate-600 border border-slate-200'
-                        }`}
-                      >
-                        {isPassed ? 'Departed' : isNext ? 'Arriving Soon' : 'Upcoming'}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.28em] text-slate-500">
+          <MapPin className="h-4 w-4 text-blue-600" /> Route overview
         </div>
+        <p className="mt-2 text-sm text-slate-600">
+          The route timeline below follows the same live trip state used by the driver and student tracking screens.
+        </p>
       </div>
 
+      <RouteTimeline route={assignedRoute} tripState={studentTripState} />
     </div>
   );
 };
